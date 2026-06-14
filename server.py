@@ -432,7 +432,7 @@ TRANG_QUẢN_LÝ_MINIAPP_ADMIN = f"""
 </html>
 """
 
-# --- GIAO DIỆN MINI APP SIÊU ĐẸP ĐÃ NÂNG CẤP CUỘN VÀ CHỨC NĂNG ---
+# --- GIAO DIỆN MINI APP ĐÃ NÂNG CẤP TAB MUA KEY ---
 TRANG_MINI_APP = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -441,6 +441,7 @@ TRANG_MINI_APP = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>HELY SHOP</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         :root {
             --bg-dark: #12002b;
@@ -454,7 +455,6 @@ TRANG_MINI_APP = """
         }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
         
-        /* Cải tiến cơ chế cuộn: Fixed body, Scrollable content */
         body { background-color: var(--bg-dark); color: var(--text-main); height: 100vh; overflow: hidden; position: relative; }
         
         /* Hiệu ứng cánh hoa rơi */
@@ -467,7 +467,7 @@ TRANG_MINI_APP = """
             100% { transform: translateY(100vh) rotate(360deg) scale(1.2); opacity: 0; }
         }
 
-        /* --- SPLASH SCREEN MỚI: Đang mở shop Hely Shop... --- */
+        /* Splash Screen */
         #splashScreen {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #12002b; z-index: 9999; display: flex;
@@ -499,9 +499,9 @@ TRANG_MINI_APP = """
         .lang-btn { background: var(--card-bg); border: 1px solid var(--card-border); color: white; padding: 5px 10px; border-radius: 15px; font-size: 12px; }
         .user-avatar { width: 35px; height: 35px; background: var(--primary-gradient); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; }
 
-        /* Main Scroll Area: Cải tiến vuốt trơn tru */
+        /* Main Scroll Area */
         .main-content { 
-            height: calc(100vh - 70px - 75px); /* Trừ header và bottom nav */
+            height: calc(100vh - 70px - 75px); 
             overflow-y: auto; padding: 15px; position: relative; z-index: 1; 
             padding-bottom: 80px; -webkit-overflow-scrolling: touch;
         }
@@ -514,45 +514,51 @@ TRANG_MINI_APP = """
         .section-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
         .icon-circle { width: 30px; height: 30px; border-radius: 50%; display: flex; justify-content: center; align-items: center; background: rgba(200, 80, 192, 0.2); color: #ff80ff;}
 
-        /* Tab Home */
+        /* --- SHOP NÂNG CẤP (MUA KEY Y HỆT ẢNH) --- */
+        .shop-label { font-weight: bold; font-size: 14px; color: #e0aaff; margin-bottom: 10px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+        .custom-select { 
+            width: 100%; padding: 15px; border-radius: 12px; 
+            background: rgba(0,0,0,0.4); border: 1px solid var(--primary); 
+            color: white; font-size: 15px; outline: none; appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c850c0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat; background-position: right 15px center; background-size: 16px;
+        }
+        
+        .duration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .duration-card { background: rgba(0,0,0,0.4); border: 1px solid var(--card-border); border-radius: 12px; padding: 15px 10px; text-align: center; cursor: pointer; transition: 0.2s; position: relative;}
+        .duration-card.selected { background: rgba(200, 80, 192, 0.2); border-color: var(--primary); box-shadow: 0 0 15px rgba(200, 80, 192, 0.4); }
+        .duration-card h3 { font-size: 14px; margin-bottom: 8px; color: #fff; text-transform: uppercase; }
+        .duration-card p { font-size: 15px; color: #00ff88; font-weight: bold; margin-bottom: 5px;}
+        
+        /* Discount section in Shop */
+        .discount-input-row { display: flex; gap: 10px; margin-top: 8px;}
+        .discount-input-row input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; outline: none; font-size: 14px;}
+        .discount-input-row button { padding: 0 15px; border-radius: 8px; border: none; background: #00cdfe; color: white; font-weight: bold; font-size: 14px; cursor: pointer;}
+
+        /* Bottom Fixed Bar cho Mua Key */
+        .shop-bottom-bar { 
+            position: fixed; bottom: 70px; left: 0; width: 100%; 
+            background: rgba(18, 0, 43, 0.98); border-top: 1px solid var(--primary); 
+            padding: 15px 20px; display: flex; flex-direction: column; gap: 12px; 
+            z-index: 90; box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
+            padding-bottom: calc(15px + env(safe-area-inset-bottom));
+        }
+        .sbb-info { display: grid; grid-template-columns: 100px 1fr; gap: 5px; align-items: center; }
+        .sbb-info-label { font-size: 13px; color: var(--text-sub); }
+        .sbb-info-val { font-weight: bold; color: white; font-size: 15px; text-align: right; }
+        .sbb-actions { display: flex; gap: 10px; }
+        .btn-sbb { flex: 1; padding: 14px 0; border-radius: 12px; font-weight: bold; font-size: 14px; border: none; cursor: pointer; text-align: center; }
+        .btn-sbb-detail { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); }
+        .btn-sbb-buy { background: var(--primary-gradient); color: white; box-shadow: 0 4px 15px rgba(200, 80, 192, 0.4); }
+        .btn-sbb:active { transform: scale(0.96); }
+
+        /* Tab Home & others... */
         .step-list { display: flex; flex-direction: column; gap: 10px; }
         .step-item { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; font-size: 15px;}
         .step-num { width: 30px; height: 30px; border-radius: 50%; background: var(--primary-gradient); display: flex; justify-content: center; align-items: center; font-weight: bold; }
         .system-status { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--card-border); align-items: center;}
         .system-status:last-child { border-bottom: none; }
         .status-badge { background: transparent; color: #00ff88; padding: 5px 12px; border-radius: 15px; font-size: 13px; border: 1px solid #00ff88; }
-
-        /* Tab Shop (Mua key) - Đã nâng cấp UI thẻ theo yêu cầu */
-        .shop-grid { display: flex; flex-direction: column; gap: 15px; }
-        .product-card { display: flex; flex-direction: column; padding: 15px; background: rgba(255,255,255,0.03); border: 1px solid rgba(200, 80, 192, 0.4); border-radius: 16px; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
-        .product-card-top { display: flex; align-items: center; gap: 15px; }
-        .product-icon { width: 50px; height: 50px; border-radius: 12px; background: rgba(200, 80, 192, 0.2); border: 1px solid rgba(200,80,192,0.5); display: flex; justify-content: center; align-items: center; font-size: 24px;}
-        .product-info h4 { font-size: 16px; margin-bottom: 5px; color: white;}
-        .product-info p { font-size: 13px; color: #00ffcc; font-weight: bold; }
-        
-        .product-actions { display: flex; gap: 10px; margin-top: 15px; }
-        .btn-card { flex: 1; padding: 10px 0; border-radius: 10px; font-weight: bold; font-size: 14px; text-align: center; cursor: pointer; border: none; }
-        .btn-detail { background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.2); }
-        .btn-buy-quick { background: var(--primary-gradient); color: white; box-shadow: 0 2px 10px rgba(200, 80, 192, 0.4); }
-        .btn-card:active { transform: scale(0.96); }
-
-        /* Màn hình chi tiết sản phẩm & Mã giảm giá */
-        #product-details { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 20; flex-direction: column; }
-        .pd-header { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid var(--card-border); background: var(--nav-bg); }
-        .pd-back { background: none; border: none; color: white; font-size: 24px; margin-right: 15px; cursor: pointer; }
-        .duration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px 15px 0 15px; }
-        .duration-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 15px; padding: 20px 10px; text-align: center; cursor: pointer; transition: 0.2s; }
-        .duration-card.selected { background: rgba(200, 80, 192, 0.15); border-color: var(--primary); box-shadow: 0 0 15px rgba(200, 80, 192, 0.5); }
-        .duration-card h3 { font-size: 16px; margin-bottom: 5px; color: #fff; }
-        .duration-card p { font-size: 16px; color: #ff80ff; font-weight: bold; margin-bottom: 5px;}
-        
-        .buy-action-bar { position: absolute; bottom: 0; left: 0; width: 100%; padding: 15px; background: var(--nav-bg); border-top: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; padding-bottom: env(safe-area-inset-bottom); }
-        .btn-buy-now { background: var(--primary-gradient); border: none; padding: 15px; border-radius: 20px; color: white; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 15px rgba(200, 80, 192, 0.4); width: 100%;}
-        
-        .discount-box { background: rgba(0,0,0,0.3); border: 1px dashed var(--primary); padding: 15px; border-radius: 12px; margin: 15px;}
-        .discount-input-row { display: flex; gap: 10px; margin-top: 8px;}
-        .discount-input-row input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; outline: none; font-size: 14px;}
-        .discount-input-row button { padding: 0 15px; border-radius: 8px; border: none; background: #00cdfe; color: white; font-weight: bold; font-size: 14px; cursor: pointer;}
 
         /* Tab Nạp tiền */
         .deposit-tabs { display: flex; background: rgba(0,0,0,0.5); border-radius: 12px; padding: 5px; margin-bottom: 20px; }
@@ -569,16 +575,18 @@ TRANG_MINI_APP = """
         .menu-item { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center; gap: 10px; cursor:pointer;}
         .menu-item .icon { font-size: 24px; color: #80d4ff; }
 
-        /* List Items (My keys, Orders, History) */
+        /* List Items */
         .list-item { background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 12px; padding: 15px; margin-bottom: 10px; }
         .list-item-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; font-weight: bold;}
         .list-item-body { font-size: 13px; color: var(--text-sub); word-break: break-all; }
         .list-item-time { font-size: 11px; color: #888; margin-top: 8px; text-align: right;}
 
-        /* Sub-views for Account */
+        /* Sub-views */
         .sub-view { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 30; flex-direction: column; }
+        .pd-header { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid var(--card-border); background: var(--nav-bg); }
+        .pd-back { background: none; border: none; color: white; font-size: 24px; margin-right: 15px; cursor: pointer; }
 
-        /* Custom Modals (Alerts) */
+        /* Custom Modals */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); z-index: 1000; display: none; justify-content: center; align-items: center; }
         .custom-modal { background: #1a0033; border: 1px solid var(--primary); border-radius: 20px; padding: 30px 20px; width: 85%; max-width: 350px; text-align: center; box-shadow: 0 0 30px rgba(200, 80, 192, 0.4); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -592,13 +600,6 @@ TRANG_MINI_APP = """
 
         /* Auto-Notify Toast */
         .toast { position: fixed; top: -100px; left: 50%; transform: translateX(-50%); background: rgba(0,255,136,0.2); border: 1px solid #00ff88; color: white; padding: 15px 25px; border-radius: 30px; font-weight: bold; z-index: 10000; transition: top 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); backdrop-filter: blur(10px); display:flex; align-items:center; gap:10px; white-space:nowrap;}
-
-        /* Music Player Floating */
-        .music-player { position: absolute; bottom: 85px; right: 15px; background: rgba(30, 20, 50, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 10px 15px; display: flex; align-items: center; gap: 10px; z-index: 50; box-shadow: 0 5px 20px rgba(0,0,0,0.5); width: calc(100% - 100px); max-width: 280px; }
-        .disk { width: 40px; height: 40px; border-radius: 50%; background: #000; display: flex; justify-content: center; align-items: center; animation: spin 4s linear infinite; }
-        .disk::after { content: ''; width: 10px; height: 10px; background: #333; border-radius: 50%; }
-        .music-info h4 { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
-        .music-info p { font-size: 10px; color: var(--text-sub); }
 
         /* Bottom Navigation */
         .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; background: var(--nav-bg); backdrop-filter: blur(20px); border-top: 1px solid var(--card-border); display: flex; justify-content: space-around; align-items: center; z-index: 100; padding-bottom: env(safe-area-inset-bottom); }
@@ -642,6 +643,7 @@ TRANG_MINI_APP = """
     </div>
 
     <div class="main-content" id="scrollableArea">
+        
         <div id="tab-home" class="tab-section active">
             <div class="glass-card">
                 <p style="font-size: 12px; color: var(--text-sub); margin-bottom: 15px;">Luồng mua key gọn nhất</p>
@@ -660,7 +662,51 @@ TRANG_MINI_APP = """
         </div>
 
         <div id="tab-shop" class="tab-section">
-            <div class="shop-grid" id="catalogContainer"></div>
+            
+            <div class="glass-card">
+                <label class="shop-label">1 - Chọn Sản Phẩm Muốn Thuê</label>
+                <select id="shopGameSelect" class="custom-select" onchange="shopGameChanged()"></select>
+            </div>
+
+            <div class="glass-card">
+                <label class="shop-label">2 - Chọn Thời Gian Thuê</label>
+                <div class="duration-grid">
+                    <div class="duration-card" id="shop-card-gio" onclick="selectShopDuration('gio')">
+                        <h3>1 GIỜ</h3><p id="shop-price-gio">0đ</p><small id="shop-stock-gio" style="font-size:11px;">Sẵn sàng</small>
+                    </div>
+                    <div class="duration-card selected" id="shop-card-ngay" onclick="selectShopDuration('ngay')">
+                        <h3>1 NGÀY</h3><p id="shop-price-ngay">0đ</p><small id="shop-stock-ngay" style="font-size:11px;">Sẵn sàng</small>
+                    </div>
+                    <div class="duration-card" id="shop-card-thang" onclick="selectShopDuration('thang')" style="grid-column: span 2;">
+                        <h3>1 THÁNG</h3><p id="shop-price-thang">0đ</p><small id="shop-stock-thang" style="font-size:11px;">Sẵn sàng</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card" id="shopDiscountSection" style="display:none; border: 1px dashed var(--primary);">
+                <label class="shop-label">3 - Nhập Mã Giảm Giá</label>
+                <div class="discount-input-row">
+                    <input type="text" id="shopInpDiscount" placeholder="Nhập mã ưu đãi...">
+                    <button onclick="checkShopDiscount()">Áp dụng</button>
+                </div>
+                <p id="shopMsgDiscount" style="font-size:13px; margin-top: 8px; font-weight:bold; display:none;"></p>
+            </div>
+
+            <div style="height: 180px;"></div>
+
+            <div class="shop-bottom-bar" id="shopBottomBar" style="display:none;">
+                <div class="sbb-info">
+                    <div class="sbb-info-label">Sản phẩm:</div>
+                    <div class="sbb-info-val" id="sbb-name">Đang tải...</div>
+                    <div class="sbb-info-label" style="margin-top:2px;">Giá tiền:</div>
+                    <div class="sbb-info-val" id="sbb-price" style="color:#00ff88; font-size:18px;">0đ</div>
+                </div>
+                <div class="sbb-actions">
+                    <button class="btn-sbb btn-sbb-detail" onclick="toggleShopDiscount()">Chi tiết / %</button>
+                    <button class="btn-sbb btn-sbb-buy" onclick="confirmShopPurchase()">💳 THANH TOÁN</button>
+                </div>
+            </div>
+
         </div>
 
         <div id="tab-deposit" class="tab-section">
@@ -687,9 +733,6 @@ TRANG_MINI_APP = """
             <div class="glass-card">
                 <div class="section-title"><div class="icon-circle">🔑</div> Key của tôi</div>
                 <p style="font-size: 12px; color: var(--text-sub);">Danh sách key bạn đã thanh toán</p>
-                <div class="deposit-tabs" style="margin-top: 15px;">
-                    <div class="dt-btn active" style="border-radius:20px;">Tất cả</div>
-                </div>
                 <div id="myKeysContainer" style="margin-top: 15px;"></div>
             </div>
         </div>
@@ -709,50 +752,6 @@ TRANG_MINI_APP = """
         </div>
     </div>
 
-    <div id="product-details" class="sub-view">
-        <div class="pd-header">
-            <button class="pd-back" onclick="closeSubView('product-details')">←</button>
-            <h3 id="pd-title">Tên Sản Phẩm</h3>
-        </div>
-        <div style="flex:1; overflow-y:auto; padding-bottom: 120px; -webkit-overflow-scrolling: touch;">
-            <div style="padding: 15px;">
-                <div class="glass-card" style="display:flex; align-items:center; gap: 15px; background: rgba(0,0,0,0.4); margin-bottom: 5px;">
-                    <div class="product-icon" style="width:60px; height:60px; font-size:30px; border:none;" id="pd-icon">⚡</div>
-                    <div>
-                        <h3 id="pd-name" style="margin-bottom:5px; font-size:18px;">Sản Phẩm</h3>
-                        <p style="font-size:12px; color:var(--text-sub);" id="pd-desc">Mô tả</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="discount-box">
-                <p style="font-size: 14px; font-weight: bold; color:#e0aaff;">Mã giảm giá (nếu có)</p>
-                <div class="discount-input-row">
-                    <input type="text" id="inpDiscount" placeholder="Nhập mã ưu đãi...">
-                    <button onclick="checkDiscount()">Áp dụng</button>
-                </div>
-                <p id="msgDiscount" style="font-size:13px; margin-top: 8px; font-weight:bold; display:none;"></p>
-            </div>
-            
-            <h4 style="margin: 5px 15px; font-size: 15px; color:#e0aaff;">Chọn thời hạn mua:</h4>
-            <div class="duration-grid">
-                <div class="duration-card" onclick="selectDuration('gio')" id="card-gio">
-                    <h3>1 Giờ</h3><p id="price-gio">--đ</p><small id="stock-gio" style="font-size:11px;color:#00ff88;">Sẵn sàng</small>
-                </div>
-                <div class="duration-card selected" onclick="selectDuration('ngay')" id="card-ngay">
-                    <h3>1 Ngày</h3><p id="price-ngay">--đ</p><small id="stock-ngay" style="font-size:11px;color:#00ff88;">Sẵn sàng</small>
-                </div>
-                <div class="duration-card" onclick="selectDuration('thang')" id="card-thang" style="grid-column: span 2;">
-                    <h3>1 Tháng</h3><p id="price-thang">--đ</p><small id="stock-thang" style="font-size:11px;color:#00ff88;">Sẵn sàng</small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="buy-action-bar">
-            <button class="btn-buy-now" onclick="confirmPurchase()">Thanh toán ngay</button>
-        </div>
-    </div>
-
     <div id="sv-orders" class="sub-view">
         <div class="pd-header">
             <button class="pd-back" onclick="closeSubView('sv-orders')">←</button>
@@ -767,14 +766,6 @@ TRANG_MINI_APP = """
             <h3>Lịch sử nạp tiền</h3>
         </div>
         <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 20px;" id="historyContainer"></div>
-    </div>
-
-    <div class="music-player">
-        <div class="disk"></div>
-        <div class="music-info">
-            <h4>[MASHUP] 🎶 Anh cứ đi đi...</h4>
-            <p>Gnasche?</p>
-        </div>
     </div>
 
     <div class="bottom-nav">
@@ -824,11 +815,14 @@ TRANG_MINI_APP = """
         // --- Logic Telegram & App ---
         let telegramUser = null;
         let globalClient = null;
+        
+        // Trạng thái Shop nâng cấp
         let currentProduct = null;
         let currentDuration = 'ngay';
         let currentPrice = 0;
         let currentDiscountCode = "";
         let currentDiscountPercent = 0;
+        
         let lastBalance = 0;
 
         if (window.Telegram?.WebApp) {
@@ -883,8 +877,15 @@ TRANG_MINI_APP = """
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             document.getElementById('tab-' + tabId).classList.add('active');
             el.classList.add('active');
-            if(tabId === 'shop') renderCatalog();
-            // Scroll trang lên đầu
+            
+            // Xử lý hiển thị Bottom Bar của Shop
+            if(tabId === 'shop') {
+                initShopUI();
+                document.getElementById('shopBottomBar').style.display = 'flex';
+            } else {
+                document.getElementById('shopBottomBar').style.display = 'none';
+            }
+            
             document.getElementById('scrollableArea').scrollTo(0, 0);
         }
 
@@ -977,63 +978,89 @@ TRANG_MINI_APP = """
             }
             document.getElementById('myKeysContainer').innerHTML = keyHtml;
             document.getElementById('ordersContainer').innerHTML = keyHtml; 
-        }
-
-        // --- Logic Shop & Discount ---
-        function renderCatalog() {
-            if(!globalClient) return;
-            const container = document.getElementById('catalogContainer');
-            let html = '';
-            const icons = ['⚡','🔥','🎯','💎','🚀','🤖'];
-            globalClient.catalog.forEach((g, idx) => {
-                let icon = icons[idx % icons.length];
-                html += `
-                <div class="product-card">
-                    <div class="product-card-top">
-                        <div class="product-icon">${icon}</div>
-                        <div class="product-info">
-                            <h4>${g.ten_game}</h4>
-                            <p>${g.gia_ngay.toLocaleString()}đ / Ngày</p>
-                        </div>
-                    </div>
-                    <div class="product-actions">
-                        <button class="btn-card btn-detail" onclick="openProductDetail('${g.id}', '${icon}')">🔍 Chi tiết</button>
-                        <button class="btn-card btn-buy-quick" onclick="openProductDetail('${g.id}', '${icon}')">🛒 Mua ngay</button>
-                    </div>
-                </div>`;
-            });
-            container.innerHTML = html;
-        }
-
-        function openProductDetail(id, icon) {
-            currentProduct = globalClient.catalog.find(g => g.id === id);
-            if(!currentProduct) return;
             
-            // Reset discount
+            // Cập nhật giá/tồn kho nếu ở Shop
+            if (currentProduct) {
+                // Refresh product ref
+                currentProduct = globalClient.catalog.find(g => g.id === currentProduct.id) || globalClient.catalog[0];
+                updateShopUI();
+            }
+        }
+
+        // --- SHOP LOGIC NÂNG CẤP ---
+        function initShopUI() {
+            if(!globalClient || globalClient.catalog.length === 0) return;
+            const select = document.getElementById('shopGameSelect');
+            
+            // Chỉ render lại select nếu chưa có (để giữ lựa chọn khi chuyển tab)
+            if(select.options.length === 0) {
+                select.innerHTML = globalClient.catalog.map(g => `<option value="${g.id}">${g.ten_game}</option>`).join('');
+                currentProduct = globalClient.catalog[0];
+                currentDuration = 'ngay';
+            }
+            updateShopUI();
+        }
+
+        function shopGameChanged() {
+            const select = document.getElementById('shopGameSelect');
+            currentProduct = globalClient.catalog.find(g => g.id === select.value);
+            // Hủy mã giảm giá khi đổi sản phẩm
             currentDiscountCode = "";
             currentDiscountPercent = 0;
-            document.getElementById('inpDiscount').value = '';
-            document.getElementById('msgDiscount').style.display = 'none';
-
-            document.getElementById('pd-title').innerText = currentProduct.ten_game;
-            document.getElementById('pd-name').innerText = currentProduct.ten_game;
-            document.getElementById('pd-desc').innerText = currentProduct.mo_ta || 'Sản phẩm chất lượng cao';
-            document.getElementById('pd-icon').innerText = icon;
-
-            updatePricesDisplay();
-            
-            const renderStock = (count) => count > 0 ? `Sẵn (${count})` : '<span style="color:#ff4444;">Hết hàng</span>';
-            document.getElementById('stock-gio').innerHTML = renderStock(currentProduct.stock_gio);
-            document.getElementById('stock-ngay').innerHTML = renderStock(currentProduct.stock_ngay);
-            document.getElementById('stock-thang').innerHTML = renderStock(currentProduct.stock_thang);
-
-            selectDuration('ngay');
-            openSubView('product-details');
+            document.getElementById('shopInpDiscount').value = '';
+            document.getElementById('shopMsgDiscount').style.display = 'none';
+            updateShopUI();
         }
 
-        async function checkDiscount() {
-            const code = document.getElementById('inpDiscount').value.trim();
-            const msgEl = document.getElementById('msgDiscount');
+        function selectShopDuration(dur) {
+            currentDuration = dur;
+            updateShopUI();
+        }
+
+        function toggleShopDiscount() {
+            const box = document.getElementById('shopDiscountSection');
+            box.style.display = box.style.display === 'none' ? 'block' : 'none';
+            if(box.style.display === 'block') {
+                box.scrollIntoView({behavior: "smooth"});
+            }
+        }
+
+        function updateShopUI() {
+            if(!currentProduct) return;
+            
+            // Cập nhật card được chọn
+            document.querySelectorAll('#tab-shop .duration-card').forEach(c => c.classList.remove('selected'));
+            document.getElementById('shop-card-' + currentDuration).classList.add('selected');
+
+            // Tính giá với giảm giá
+            let p_gio = currentProduct.gia_gio * (1 - currentDiscountPercent/100);
+            let p_ngay = currentProduct.gia_ngay * (1 - currentDiscountPercent/100);
+            let p_thang = currentProduct.gia_thang * (1 - currentDiscountPercent/100);
+            
+            const fmt = (oldP, newP) => currentDiscountPercent > 0 ? `<s style="color:#888; font-size:12px;">${oldP.toLocaleString()}đ</s><br>${newP.toLocaleString()}đ` : `${newP.toLocaleString()}đ`;
+            
+            document.getElementById('shop-price-gio').innerHTML = fmt(currentProduct.gia_gio, p_gio);
+            document.getElementById('shop-price-ngay').innerHTML = fmt(currentProduct.gia_ngay, p_ngay);
+            document.getElementById('shop-price-thang').innerHTML = fmt(currentProduct.gia_thang, p_thang);
+
+            const renderStock = (count) => count > 0 ? `<span style="color:#00ff88">Sẵn (${count})</span>` : '<span style="color:#ff4444;">Hết hàng</span>';
+            document.getElementById('shop-stock-gio').innerHTML = renderStock(currentProduct.stock_gio);
+            document.getElementById('shop-stock-ngay').innerHTML = renderStock(currentProduct.stock_ngay);
+            document.getElementById('shop-stock-thang').innerHTML = renderStock(currentProduct.stock_thang);
+
+            // Cập nhật Bottom Bar
+            let loaiStr = currentDuration === 'gio' ? '1 GIỜ' : (currentDuration === 'ngay' ? '1 NGÀY' : '1 THÁNG');
+            document.getElementById('sbb-name').innerText = `${currentProduct.ten_game} - ${loaiStr}`;
+            
+            let baseP = currentDuration === 'gio' ? currentProduct.gia_gio : (currentDuration === 'ngay' ? currentProduct.gia_ngay : currentProduct.gia_thang);
+            currentPrice = baseP * (1 - currentDiscountPercent/100);
+            
+            document.getElementById('sbb-price').innerText = currentPrice.toLocaleString() + ' VNĐ';
+        }
+
+        async function checkShopDiscount() {
+            const code = document.getElementById('shopInpDiscount').value.trim();
+            const msgEl = document.getElementById('shopMsgDiscount');
             if(!code) return;
             
             const res = await fetch(`/api/check_discount?code=${code}`);
@@ -1044,54 +1071,32 @@ TRANG_MINI_APP = """
                 currentDiscountCode = code;
                 msgEl.innerText = `✅ Đã áp dụng giảm ${data.percent}%`;
                 msgEl.style.color = '#00ff88';
-                updatePricesDisplay();
-                selectDuration(currentDuration); // Refresh price selected
+                updateShopUI();
             } else {
                 currentDiscountPercent = 0;
                 currentDiscountCode = "";
                 msgEl.innerText = `❌ Mã không hợp lệ hoặc đã hết lượt`;
                 msgEl.style.color = '#ff4444';
-                updatePricesDisplay();
-                selectDuration(currentDuration);
+                updateShopUI();
             }
         }
 
-        function updatePricesDisplay() {
-            let p_gio = currentProduct.gia_gio * (1 - currentDiscountPercent/100);
-            let p_ngay = currentProduct.gia_ngay * (1 - currentDiscountPercent/100);
-            let p_thang = currentProduct.gia_thang * (1 - currentDiscountPercent/100);
-            
-            const fmt = (oldP, newP) => currentDiscountPercent > 0 ? `<s style="color:#888; font-size:12px;">${oldP.toLocaleString()}đ</s><br>${newP.toLocaleString()}đ` : `${newP.toLocaleString()}đ`;
-            
-            document.getElementById('price-gio').innerHTML = fmt(currentProduct.gia_gio, p_gio);
-            document.getElementById('price-ngay').innerHTML = fmt(currentProduct.gia_ngay, p_ngay);
-            document.getElementById('price-thang').innerHTML = fmt(currentProduct.gia_thang, p_thang);
-        }
-
-        function selectDuration(dur) {
-            currentDuration = dur;
-            document.querySelectorAll('.duration-card').forEach(c => c.classList.remove('selected'));
-            document.getElementById('card-' + dur).classList.add('selected');
-            
-            let baseP = dur === 'gio' ? currentProduct.gia_gio : (dur === 'ngay' ? currentProduct.gia_ngay : currentProduct.gia_thang);
-            currentPrice = baseP * (1 - currentDiscountPercent/100);
-        }
-
-        function confirmPurchase() {
+        function confirmShopPurchase() {
+            if(!currentProduct) return;
             if(currentProduct[`stock_${currentDuration}`] <= 0) {
-                showCustomAlert('❌', 'Thất bại', 'Gói thời hạn này hiện đang hết hàng. Vui lòng chọn gói khác!');
+                showCustomAlert('❌', 'Hết hàng', 'Gói thời hạn này hiện đang hết hàng. Vui lòng chọn gói khác!');
                 return;
             }
             if(globalClient.balance < currentPrice) {
-                showCustomAlert('💸', 'Thất bại', 'Số dư của bạn không đủ để thanh toán. Vui lòng nạp thêm!');
+                showCustomAlert('💸', 'Không đủ tiền', `Tài khoản của bạn không đủ để thanh toán.<br><br>Cần: <b style="color:#ff4444">${currentPrice.toLocaleString()} VNĐ</b><br>Đang có: <b style="color:#00ff88">${globalClient.balance.toLocaleString()} VNĐ</b><br><br>Vui lòng chuyển qua Tab <b>Nạp tiền</b> để nạp thêm!`);
                 return;
             }
 
             let loaiStr = currentDuration === 'gio' ? '1 Giờ' : (currentDuration === 'ngay' ? '1 Ngày' : '1 Tháng');
-            showCustomAlert('🛒', 'Xác nhận thanh toán', `Bạn chắc chắn mua key <b>${currentProduct.ten_game} - ${loaiStr}</b> với giá <b style="color:#00ff88">${currentPrice.toLocaleString()}đ</b> chứ?`, executePurchase);
+            showCustomAlert('🛒', 'Xác nhận thanh toán', `Bạn muốn mua key <b>${currentProduct.ten_game} - ${loaiStr}</b><br><br>Tổng tiền: <b style="color:#00ff88; font-size:18px;">${currentPrice.toLocaleString()} VNĐ</b>`, executeShopPurchase);
         }
 
-        async function executePurchase() {
+        async function executeShopPurchase() {
             let uid = telegramUser ? telegramUser.id : "guest_123";
             const res = await fetch('/api/purchase_key', {
                 method: 'POST',
@@ -1100,11 +1105,21 @@ TRANG_MINI_APP = """
             });
             const data = await res.json();
             if(data.success) {
-                closeSubView('product-details');
-                showCustomAlert('🎉', 'Mua key thành công!', `Cảm ơn bạn đã ủng hộ Hely Shop!<br><br><span style="background:rgba(255,255,255,0.1); padding:10px; border-radius:8px; display:inline-block; font-family:monospace; color:#00ffcc; font-size:16px;">${data.key}</span><br><br><small>Key đã được lưu vào Tab [Key của tôi]</small>`);
+                // Hiệu ứng pháo hoa siêu đẹp
+                if (typeof confetti === 'function') {
+                    var duration = 3000;
+                    var end = Date.now() + duration;
+                    (function frame() {
+                        confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#c850c0', '#4158d0', '#00ff88'] });
+                        confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#c850c0', '#4158d0', '#00ff88'] });
+                        if (Date.now() < end) requestAnimationFrame(frame);
+                    }());
+                }
+                
+                showCustomAlert('🎉', 'Mua Key Thành Công!', `Giao dịch thành công. Key của bạn là:<br><br><span style="background:rgba(255,255,255,0.1); padding:10px 15px; border-radius:8px; display:inline-block; font-family:monospace; color:#00ffcc; font-size:16px; border:1px dashed #c850c0;">${data.key}</span><br><br><small style="color:#a0a0b8">Key đã được lưu vào Tab [Key của tôi]</small>`);
                 globalClient = await fetchClientData();
                 lastBalance = globalClient.balance;
-                updateUI();
+                updateUI(); // Cập nhật lại UI tồn kho & tiền
             } else {
                 showCustomAlert('❌', 'Lỗi giao dịch', data.message);
             }
