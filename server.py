@@ -7,6 +7,8 @@ import uuid
 import time
 import json
 import threading
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from http import cookies
@@ -170,6 +172,8 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
         input[type="number"], input[type="text"] {{ padding: 8px; border-radius: 5px; border: 1px solid #b829ea; width: 110px; margin-right: 5px; background: #190033; color: white; }}
         .btn-action {{ padding: 8px 15px; border: none; border-radius: 5px; color: white; cursor: pointer; font-weight: bold; font-size: 12px; }}
         .btn-add {{ background: linear-gradient(90deg, #00cdfe, #0076fe); }} .btn-ban {{ background: linear-gradient(90deg, #ff0055, #cc0044); }}
+        textarea.broadcast-input {{ width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #b829ea; background: #190033; color: white; margin-bottom: 10px; outline: none; resize: vertical; }}
+        .btn-broadcast {{ padding: 10px 20px; background: linear-gradient(90deg, #ff9900, #ff5500); border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.3s; }}
     </style>
 </head>
 <body>
@@ -182,6 +186,14 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
             <a href="/admin" class="active">👥 Quản lý thành viên</a>
             <a href="/admin/miniapp">🎮 Quản lý Sản Phẩm & Key</a>
         </div>
+
+        <div class="main-box card">
+            <h3 style="color:#e0aaff; font-size: 16px; margin-bottom: 10px;">📢 THÔNG BÁO TỚI TẤT CẢ USER (Gửi vào Bot)</h3>
+            <textarea id="broadcastMsg" class="broadcast-input" rows="3" placeholder="Nhập nội dung thông báo muốn gửi tới tất cả người dùng trong Bot Telegram..."></textarea>
+            <button class="btn-broadcast" onclick="guiThongBao()">🚀 GỬI THÔNG BÁO</button>
+            <span id="broadcastStatus" style="margin-left: 15px; font-size: 13px; color: #00ffcc;"></span>
+        </div>
+
         <div class="main-box card">
             <h3 style="color:#e0aaff; font-size: 16px; margin-bottom: 10px;">👥 DANH SÁCH THÀNH VIÊN</h3>
             <table>
@@ -216,6 +228,16 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
             await fetch('/api/admin/ban', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{user_id: uid, status: nextIdx}}) }});
             taiThongTin();
         }}
+        async function guiThongBao() {{
+            const msg = document.getElementById('broadcastMsg').value;
+            if(!msg) return alert("Vui lòng nhập nội dung!");
+            const st = document.getElementById('broadcastStatus');
+            st.innerText = "Đang gửi...";
+            const res = await fetch('/api/admin/broadcast', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{message: msg}}) }});
+            const data = await res.json();
+            st.innerText = `✅ Đã gửi thành công tới ${{data.count}} người dùng!`;
+            document.getElementById('broadcastMsg').value = '';
+        }}
         taiThongTin();
     </script>
 </body>
@@ -242,6 +264,7 @@ TRANG_QUẢN_LÝ_MINIAPP_ADMIN = f"""
         button:hover {{ box-shadow: 0 0 15px rgba(184, 41, 234, 0.6); }}
         th, td {{ padding: 15px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; }}
         th {{ background: rgba(184, 41, 234, 0.2); color: #e0aaff; font-weight: bold; text-transform: uppercase; font-size: 12px; }}
+        .btn-delete {{ padding: 6px 12px; background: linear-gradient(90deg, #ff0055, #cc0044); border: none; color: white; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: bold; width: auto; }}
     </style>
 </head>
 <body>
@@ -280,7 +303,7 @@ TRANG_QUẢN_LÝ_MINIAPP_ADMIN = f"""
         <div class="main-box card" style="overflow-x: auto;">
             <h3 style="color:#e0aaff; font-size: 16px; margin-bottom: 10px;">📊 KHO HÀNG HIỆN TẠI</h3>
             <table style="width: 100%; background: rgba(0,0,0,0.3); border-radius: 10px; overflow: hidden; border-collapse: collapse;">
-                <thead><tr><th>Sản Phẩm</th><th>Giá Giờ</th><th>Giá Ngày</th><th>Giá Tháng</th><th>Tồn Kho</th></tr></thead>
+                <thead><tr><th>Sản Phẩm</th><th>Giá Giờ</th><th>Giá Ngày</th><th>Giá Tháng</th><th>Tồn Kho</th><th>Hành Động</th></tr></thead>
                 <tbody id="tableGames"></tbody>
             </table>
         </div>
@@ -294,7 +317,14 @@ TRANG_QUẢN_LÝ_MINIAPP_ADMIN = f"""
                 <td><b style="color:white;">${{g.ten_game}}</b><br><small style="color:#a0a0b8;">${{g.mo_ta}}</small></td>
                 <td>${{g.gia_gio.toLocaleString()}}đ</td><td>${{g.gia_ngay.toLocaleString()}}đ</td><td>${{g.gia_thang.toLocaleString()}}đ</td>
                 <td style="color:#00ffcc">Giờ: ${{data.counts[g.id]?.gio||0}} | Ngày: ${{data.counts[g.id]?.ngay||0}} | Tháng: ${{data.counts[g.id]?.thang||0}}</td>
+                <td><button class="btn-delete" onclick="xoaSanPham('${{g.id}}')">🗑 Xóa</button></td>
             </tr>`).join('');
+        }}
+        async function xoaSanPham(id) {{
+            if(confirm("Bạn có chắc chắn muốn xóa sản phẩm này cùng toàn bộ key của nó không?")) {{
+                await fetch('/api/admin/delete_game', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{game_id: id}}) }});
+                alert("✅ Đã xóa thành công!"); loadData();
+            }}
         }}
         document.getElementById('formGame').onsubmit = async (e) => {{
             e.preventDefault();
@@ -344,6 +374,23 @@ TRANG_MINI_APP = """
             90% { opacity: 1; }
             100% { transform: translateY(100vh) rotate(360deg) scale(1.2); opacity: 0; }
         }
+
+        /* --- SPLASH SCREEN SIÊU ĐẸP --- */
+        #splashScreen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #12002b; z-index: 9999; display: flex;
+            justify-content: center; align-items: center; text-align: center;
+            transition: opacity 0.5s ease-out; flex-direction: column;
+            background-image: radial-gradient(circle at center, #2a005c 0%, #12002b 100%);
+        }
+        .splash-logo { font-size: 60px; animation: bounce 2s infinite; margin-bottom: 20px; }
+        .splash-text {
+            color: #fff; font-size: 22px; font-weight: 900; text-transform: uppercase;
+            background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            animation: pulse 2s infinite; padding: 0 20px; text-align: center;
+        }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+        @keyframes pulse { 0% { opacity: 0.8; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1.05); } 100% { opacity: 0.8; transform: scale(0.95); } }
 
         /* Top Header */
         .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: transparent; z-index: 10; position: relative; border-bottom: 1px solid var(--card-border); }
@@ -452,20 +499,22 @@ TRANG_MINI_APP = """
     </style>
 </head>
 <body>
+    <div id="splashScreen">
+        <div class="splash-logo">✨</div>
+        <div class="splash-text">Chào mừng bạn đến với Hely shop siêu đẹp</div>
+    </div>
+
     <div class="petals" id="petals-container"></div>
     
-    <!-- Auto Notify Toast -->
     <div id="notifyToast" class="toast">🎉 <span id="toastMsg">Tin nhắn</span></div>
 
-    <!-- Modal Base -->
     <div class="modal-overlay" id="mainModal">
         <div class="custom-modal">
             <div class="modal-icon" id="mdIcon">❓</div>
             <div class="modal-title" id="mdTitle">Tiêu đề</div>
             <div class="modal-desc" id="mdDesc">Nội dung</div>
             <div class="modal-buttons" id="mdButtons">
-                <!-- Buttons rendered dynamically -->
-            </div>
+                </div>
         </div>
     </div>
 
@@ -483,10 +532,8 @@ TRANG_MINI_APP = """
         </div>
     </div>
 
-    <!-- MAIN VIEWS -->
     <div class="main-content">
         
-        <!-- Tab 1: Home -->
         <div id="tab-home" class="tab-section active">
             <div class="glass-card">
                 <p style="font-size: 12px; color: var(--text-sub); margin-bottom: 15px;">Luồng mua key gọn nhất</p>
@@ -501,19 +548,15 @@ TRANG_MINI_APP = """
             <div class="glass-card">
                 <div class="section-title"><div class="icon-circle">📊</div> Trạng thái hệ thống</div>
                 <div id="systemStatusList">
-                    <!-- Đổ tự động từ API -->
-                </div>
+                    </div>
             </div>
         </div>
 
-        <!-- Tab 2: Mua Key -->
         <div id="tab-shop" class="tab-section">
             <div class="shop-grid" id="catalogContainer">
-                <!-- Đổ dữ liệu qua JS -->
-            </div>
+                </div>
         </div>
 
-        <!-- Tab 3: Nạp tiền -->
         <div id="tab-deposit" class="tab-section">
             <div class="deposit-tabs">
                 <div class="dt-btn active" onclick="switchDepoTab('admin', this)">Nạp tiền (Admin)</div>
@@ -534,7 +577,6 @@ TRANG_MINI_APP = """
             </div>
         </div>
 
-        <!-- Tab 4: Key của tôi -->
         <div id="tab-keys" class="tab-section">
             <div class="glass-card">
                 <div class="section-title"><div class="icon-circle">🔑</div> Key của tôi</div>
@@ -543,12 +585,10 @@ TRANG_MINI_APP = """
                     <div class="dt-btn active" style="border-radius:20px;">Tất cả</div>
                 </div>
                 <div id="myKeysContainer" style="margin-top: 15px;">
-                    <!-- Đổ từ API -->
-                </div>
+                    </div>
             </div>
         </div>
 
-        <!-- Tab 5: Tài khoản -->
         <div id="tab-account" class="tab-section">
             <div class="glass-card">
                 <div class="profile-header">
@@ -563,10 +603,7 @@ TRANG_MINI_APP = """
             </div>
         </div>
 
-    </div> <!-- End Main Content -->
-
-    <!-- SUB-VIEW: Product Details -->
-    <div id="product-details" class="sub-view">
+    </div> <div id="product-details" class="sub-view">
         <div class="pd-header">
             <button class="pd-back" onclick="closeSubView('product-details')">←</button>
             <h3 id="pd-title">Tên Sản Phẩm</h3>
@@ -595,33 +632,28 @@ TRANG_MINI_APP = """
         </div>
         
         <div class="buy-action-bar">
-            <button class="btn-buy-now" style="width:100%; font-size:18px; padding:15px;" onclick="confirmPurchase()">Thanh toán ngay</button>
+            <button class="btn-buy-now" style="width:100%; font-size:18px; padding:15px;" onclick="confirmPurchase()">Mua Key</button>
         </div>
     </div>
 
-    <!-- SUB-VIEW: Đơn hàng -->
     <div id="sv-orders" class="sub-view">
         <div class="pd-header">
             <button class="pd-back" onclick="closeSubView('sv-orders')">←</button>
             <h3>Danh sách đơn hàng</h3>
         </div>
         <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 20px;" id="ordersContainer">
-            <!-- Đổ từ API -->
-        </div>
+            </div>
     </div>
 
-    <!-- SUB-VIEW: Lịch sử nạp -->
     <div id="sv-history" class="sub-view">
         <div class="pd-header">
             <button class="pd-back" onclick="closeSubView('sv-history')">←</button>
             <h3>Lịch sử nạp tiền</h3>
         </div>
         <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 20px;" id="historyContainer">
-            <!-- Đổ từ API -->
-        </div>
+            </div>
     </div>
 
-    <!-- Music Player Floating -->
     <div class="music-player">
         <div class="disk"></div>
         <div class="music-info">
@@ -630,7 +662,6 @@ TRANG_MINI_APP = """
         </div>
     </div>
 
-    <!-- Bottom Navigation -->
     <div class="bottom-nav">
         <div class="nav-item active" onclick="switchTab('home', this)">
             <div class="nav-icon">🏠</div><span>Home</span>
@@ -650,6 +681,15 @@ TRANG_MINI_APP = """
     </div>
 
     <script>
+        // --- ẨN SPLASH SCREEN SAU 5 GIÂY ---
+        setTimeout(() => {
+            const splash = document.getElementById('splashScreen');
+            if(splash) {
+                splash.style.opacity = '0';
+                setTimeout(() => splash.style.display = 'none', 500);
+            }
+        }, 5000);
+
         // --- Animation Cánh Hoa ---
         function createPetals() {
             const container = document.getElementById('petals-container');
@@ -698,9 +738,10 @@ TRANG_MINI_APP = """
             
             let btnHtml = '';
             if (onConfirm) {
+                // Sửa chữ thành Đồng ý / Không đồng ý theo style mua key
                 btnHtml = `
-                    <button class="btn-modal btn-cancel" onclick="closeModal()">Hủy</button>
-                    <button class="btn-modal btn-confirm" onclick="executeCallback()">Có</button>
+                    <button class="btn-modal btn-cancel" onclick="closeModal()">Huỷ</button>
+                    <button class="btn-modal btn-confirm" onclick="executeCallback()">Đồng ý</button>
                 `;
                 window.modalCallback = onConfirm;
             } else {
@@ -889,7 +930,8 @@ TRANG_MINI_APP = """
             }
 
             let loaiStr = currentDuration === 'gio' ? '1 Giờ' : (currentDuration === 'ngay' ? '1 Ngày' : '1 Tháng');
-            showCustomAlert('🛒', 'Xác nhận thanh toán', `Bạn chắc chắn mua key <b>${currentProduct.ten_game} - ${loaiStr}</b> với giá <b style="color:#00ffcc">${currentPrice.toLocaleString()}đ</b> chứ?`, executePurchase);
+            // Cập nhật text y như yêu cầu
+            showCustomAlert('🛒', 'Xác nhận thanh toán', `Bạn chắc chắn mua key <b>${currentProduct.ten_game} - ${loaiStr}</b> chứ?`, executePurchase);
         }
 
         async function executePurchase() {
@@ -902,7 +944,8 @@ TRANG_MINI_APP = """
             const data = await res.json();
             if(data.success) {
                 closeSubView('product-details');
-                showCustomAlert('🎉', 'Mua key thành công', `Cảm ơn bạn đã ủng hộ Hely Shop siêu đẹp!<br><br><span style="background:rgba(255,255,255,0.1); padding:10px; border-radius:8px; display:inline-block; font-family:monospace; color:#00ffcc; font-size:16px;">${data.key}</span><br><br><small>Key đã được lưu vào Tab [Key của tôi]</small>`);
+                // Chữ Mua key thành công siêu đẹp theo yêu cầu
+                showCustomAlert('🎉', 'Mua key thành công siêu đẹp!', `Cảm ơn bạn đã ủng hộ Hely Shop!<br><br><span style="background:rgba(255,255,255,0.1); padding:10px; border-radius:8px; display:inline-block; font-family:monospace; color:#00ffcc; font-size:16px;">${data.key}</span><br><br><small>Key đã được lưu vào Tab [Key của tôi]</small>`);
                 // Force reload data
                 globalClient = await fetchClientData();
                 lastBalance = globalClient.balance;
@@ -1115,6 +1158,50 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 kn.close()
                 self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
                 self.wfile.write(json.dumps(res).encode('utf-8'))
+            
+            # Tính năng gửi thông báo All User qua Bot
+            elif self.path == "/api/admin/broadcast":
+                if not self.xac_thuc_admin():
+                    self.send_response(401); self.end_headers(); return
+                req = json.loads(post_data.decode('utf-8'))
+                msg = req.get('message', '')
+                
+                kn = sqlite3.connect("he_thong_ban_key.db")
+                con_tro = kn.cursor()
+                con_tro.execute("SELECT nguoi_dung_id FROM khach_hang")
+                users = con_tro.fetchall()
+                kn.close()
+
+                thanh_cong = 0
+                for u in users:
+                    chat_id = u[0]
+                    # Gọi API Telegram gửi thẳng vào khung chat (không liên quan miniapp)
+                    url = f"https://api.telegram.org/bot{MÃ_TOKEN}/sendMessage"
+                    data = urllib.parse.urlencode({'chat_id': chat_id, 'text': msg}).encode('utf-8')
+                    try:
+                        urllib.request.urlopen(url, data=data, timeout=3)
+                        thanh_cong += 1
+                    except Exception:
+                        pass
+
+                self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "count": thanh_cong}).encode('utf-8'))
+
+            # Tính năng xoá Sản Phẩm
+            elif self.path == "/api/admin/delete_game":
+                if not self.xac_thuc_admin():
+                    self.send_response(401); self.end_headers(); return
+                req = json.loads(post_data.decode('utf-8'))
+                gid = req.get('game_id')
+                kn = sqlite3.connect("he_thong_ban_key.db")
+                con_tro = kn.cursor()
+                # Xoá sản phẩm
+                con_tro.execute("DELETE FROM san_pham_game WHERE id=?", (gid,))
+                # Xoá luôn các key liên quan đến sản phẩm đó
+                con_tro.execute("DELETE FROM kho_key_dong WHERE game_id=?", (gid,))
+                kn.commit(); kn.close()
+                self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
 
             elif self.path in ["/api/admin/deposit", "/api/admin/ban", "/api/admin/add_game", "/api/admin/import_keys"]:
                 if not self.xac_thuc_admin():
