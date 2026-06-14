@@ -12,6 +12,11 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from http import cookies
 from urllib.parse import parse_qs
 
+# --- ĐÃ THÊM: Các thư viện Telegram bị thiếu ---
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from telegram.ext import Application, CommandHandler, ContextTypes
+# -----------------------------------------------
+
 # --- Cấu hình ghi nhật ký ---
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
