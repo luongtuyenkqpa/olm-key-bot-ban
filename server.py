@@ -12,7 +12,7 @@ import urllib.parse
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from http import cookies
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 # --- Các thư viện Telegram ---
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -77,13 +77,21 @@ def khởi_tạo_cơ_sở_dữ_liệu():
         )
     ''')
 
-    # Bảng mới: Lưu lịch sử nạp tiền từ Admin
     con_trỏ.execute('''
         CREATE TABLE IF NOT EXISTS lich_su_nap (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nguoi_dung_id TEXT,
             so_tien REAL,
             ngay_nap TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Bảng mới: Quản lý mã giảm giá
+    con_trỏ.execute('''
+        CREATE TABLE IF NOT EXISTS ma_giam_gia (
+            ma_code TEXT PRIMARY KEY,
+            phan_tram INTEGER DEFAULT 0,
+            so_luong INTEGER DEFAULT 1
         )
     ''')
 
@@ -98,12 +106,12 @@ khởi_tạo_cơ_sở_dữ_liệu()
 
 bot_app = None
 
-# --- GIAO DIỆN WEB CSS CHUNG (ADMIN) - ĐÃ LÀM LẠI THEO ẢNH MỚI NHẤT ---
+# --- GIAO DIỆN WEB CSS CHUNG (ADMIN) ---
 GIAO_DIỆN_CHUNG_CSS = """
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        background: #1c0036; /* Màu nền tím đậm y hệt ảnh admin */
+        background: #1c0036;
         min-height: 100vh; color: #fff; overflow-x: hidden;
     }
     .main-box {
@@ -117,6 +125,10 @@ GIAO_DIỆN_CHUNG_CSS = """
         color: white; text-decoration: none; font-weight: bold; transition: 0.3s; font-size: 14px;
     }
     .nav-tabs a.active, .nav-tabs a:hover { background: #b829ea; box-shadow: 0 0 15px rgba(184, 41, 234, 0.6); }
+    /* Tùy chỉnh thanh cuộn đẹp hơn */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #b829ea; border-radius: 10px; }
 """
 
 TRANG_ĐĂNG_NHẬP_ADMIN = f"""
@@ -159,6 +171,7 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
 <html lang="vi">
 <head>
     <meta charset="UTF-8"><title>Quản Lý Server</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         {GIAO_DIỆN_CHUNG_CSS}
         .container {{ max-width: 1200px; margin: 30px auto; padding: 20px; }}
@@ -169,7 +182,7 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
         table {{ width: 100%; border-collapse: collapse; margin-top: 15px; background: rgba(0,0,0,0.3); border-radius: 10px; overflow: hidden; }}
         th, td {{ padding: 15px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); white-space: nowrap; font-size: 14px; }}
         th {{ background: rgba(184, 41, 234, 0.2); color: #e0aaff; font-weight: bold; text-transform: uppercase; font-size: 12px; }}
-        input[type="number"], input[type="text"] {{ padding: 8px; border-radius: 5px; border: 1px solid #b829ea; width: 110px; margin-right: 5px; background: #190033; color: white; }}
+        input[type="number"], input[type="text"] {{ padding: 8px; border-radius: 5px; border: 1px solid #b829ea; width: 110px; margin-right: 5px; background: #190033; color: white; outline:none; }}
         .btn-action {{ padding: 8px 15px; border: none; border-radius: 5px; color: white; cursor: pointer; font-weight: bold; font-size: 12px; }}
         .btn-add {{ background: linear-gradient(90deg, #00cdfe, #0076fe); }} .btn-ban {{ background: linear-gradient(90deg, #ff0055, #cc0044); }}
         textarea.broadcast-input {{ width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #b829ea; background: #190033; color: white; margin-bottom: 10px; outline: none; resize: vertical; }}
@@ -203,6 +216,18 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
         </div>
     </div>
     <script>
+        function thongBao(msg, isSuccess=true) {{
+            Swal.fire({{
+                title: isSuccess ? 'Thành công!' : 'Thông báo',
+                text: msg,
+                icon: isSuccess ? 'success' : 'info',
+                background: '#250046',
+                color: '#fff',
+                confirmButtonColor: '#b829ea',
+                borderRadius: '15px'
+            }});
+        }}
+
         async function taiThongTin() {{
             const res = await fetch('/api/admin/users');
             const users = await res.json();
@@ -221,7 +246,8 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
             const val = document.getElementById(`amt-${{uid}}`).value;
             if(!val) return;
             await fetch('/api/admin/deposit', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{user_id: uid, amount: val}}) }});
-            alert("✅ Nạp tiền thành công!"); taiThongTin();
+            thongBao("✅ Đã cộng tiền thành công cho người dùng!"); 
+            taiThongTin();
         }}
         async function doiTrangThai(uid, current) {{
             const nextIdx = current === 'hoat_dong' ? 'bi_ban' : 'hoat_dong';
@@ -230,13 +256,17 @@ TRANG_BẢNG_ĐIỀU_KHIỂN_ADMIN = f"""
         }}
         async function guiThongBao() {{
             const msg = document.getElementById('broadcastMsg').value;
-            if(!msg) return alert("Vui lòng nhập nội dung!");
+            if(!msg) {{
+                Swal.fire({{ icon: 'error', title: 'Lỗi', text: 'Vui lòng nhập nội dung!', background: '#250046', color: '#fff' }});
+                return;
+            }}
             const st = document.getElementById('broadcastStatus');
             st.innerText = "Đang gửi...";
             const res = await fetch('/api/admin/broadcast', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{message: msg}}) }});
             const data = await res.json();
             st.innerText = `✅ Đã gửi thành công tới ${{data.count}} người dùng!`;
             document.getElementById('broadcastMsg').value = '';
+            thongBao(`Đã gửi thông báo đến ${{data.count}} người dùng!`);
         }}
         taiThongTin();
     </script>
@@ -249,6 +279,7 @@ TRANG_QUẢN_LÝ_MINIAPP_ADMIN = f"""
 <html lang="vi">
 <head>
     <meta charset="UTF-8"><title>Quản Lý Server</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         {GIAO_DIỆN_CHUNG_CSS}
         .container {{ max-width: 1200px; margin: 30px auto; padding: 20px; }}
@@ -300,8 +331,28 @@ TRANG_QUẢN_LÝ_MINIAPP_ADMIN = f"""
                 </form>
             </div>
         </div>
+        
+        <div class="grid">
+            <div class="main-box card">
+                <h3 style="color:#e0aaff; font-size: 16px;">Tạo Mã Giảm Giá (%)</h3>
+                <form id="formDiscount">
+                    <label>Mã Code (VD: HELYVIP)</label><input type="text" name="ma_code" required>
+                    <label>Phần trăm giảm (1 - 100%)</label><input type="number" name="phan_tram" max="100" min="1" required>
+                    <label>Số lượng lượt dùng</label><input type="number" name="so_luong" value="10" required>
+                    <button type="submit" style="margin-top:15px; background:linear-gradient(90deg, #ff9900, #ff5500);">TẠO MÃ GIẢM GIÁ</button>
+                </form>
+            </div>
+            <div class="main-box card" style="overflow-x: auto;">
+                <h3 style="color:#e0aaff; font-size: 16px; margin-bottom: 10px;">📋 DANH SÁCH MÃ GIẢM GIÁ</h3>
+                <table style="width: 100%; background: rgba(0,0,0,0.3); border-radius: 10px; overflow: hidden; border-collapse: collapse;">
+                    <thead><tr><th>Mã Code</th><th>Giảm (%)</th><th>Lượt Còn</th><th>Hành Động</th></tr></thead>
+                    <tbody id="tableDiscounts"></tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="main-box card" style="overflow-x: auto;">
-            <h3 style="color:#e0aaff; font-size: 16px; margin-bottom: 10px;">📊 KHO HÀNG HIỆN TẠI</h3>
+            <h3 style="color:#e0aaff; font-size: 16px; margin-bottom: 10px;">📊 KHO SẢN PHẨM HIỆN TẠI</h3>
             <table style="width: 100%; background: rgba(0,0,0,0.3); border-radius: 10px; overflow: hidden; border-collapse: collapse;">
                 <thead><tr><th>Sản Phẩm</th><th>Giá Giờ</th><th>Giá Ngày</th><th>Giá Tháng</th><th>Tồn Kho</th><th>Hành Động</th></tr></thead>
                 <tbody id="tableGames"></tbody>
@@ -309,40 +360,79 @@ TRANG_QUẢN_LÝ_MINIAPP_ADMIN = f"""
         </div>
     </div>
     <script>
+        function thongBao(msg) {{
+            Swal.fire({{ title: 'Thành công!', text: msg, icon: 'success', background: '#250046', color: '#fff', confirmButtonColor: '#b829ea', borderRadius: '15px' }});
+        }}
+
         async function loadData() {{
             const res = await fetch('/api/admin/games_dashboard');
             const data = await res.json();
             document.getElementById('selectGame').innerHTML = data.games.map(g => `<option value="${{g.id}}">${{g.ten_game}}</option>`).join('');
+            
             document.getElementById('tableGames').innerHTML = data.games.map(g => `<tr>
                 <td><b style="color:white;">${{g.ten_game}}</b><br><small style="color:#a0a0b8;">${{g.mo_ta}}</small></td>
                 <td>${{g.gia_gio.toLocaleString()}}đ</td><td>${{g.gia_ngay.toLocaleString()}}đ</td><td>${{g.gia_thang.toLocaleString()}}đ</td>
                 <td style="color:#00ffcc">Giờ: ${{data.counts[g.id]?.gio||0}} | Ngày: ${{data.counts[g.id]?.ngay||0}} | Tháng: ${{data.counts[g.id]?.thang||0}}</td>
                 <td><button class="btn-delete" onclick="xoaSanPham('${{g.id}}')">🗑 Xóa</button></td>
             </tr>`).join('');
+
+            document.getElementById('tableDiscounts').innerHTML = data.discounts.map(d => `<tr>
+                <td><b style="color:#00ffcc;">${{d.ma_code}}</b></td>
+                <td><b style="color:#ff80ff;">${{d.phan_tram}}%</b></td>
+                <td>${{d.so_luong}}</td>
+                <td><button class="btn-delete" onclick="xoaMaGiamGia('${{d.ma_code}}')">🗑 Xóa</button></td>
+            </tr>`).join('');
         }}
+        
         async function xoaSanPham(id) {{
-            if(confirm("Bạn có chắc chắn muốn xóa sản phẩm này cùng toàn bộ key của nó không?")) {{
-                await fetch('/api/admin/delete_game', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{game_id: id}}) }});
-                alert("✅ Đã xóa thành công!"); loadData();
-            }}
+            Swal.fire({{
+                title: 'Xoá Sản Phẩm?',
+                text: "Toàn bộ key thuộc sản phẩm này sẽ bị xoá!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ff0055',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Đồng ý',
+                cancelButtonText: 'Huỷ',
+                background: '#250046', color: '#fff'
+            }}).then(async (result) => {{
+                if (result.isConfirmed) {{
+                    await fetch('/api/admin/delete_game', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{game_id: id}}) }});
+                    thongBao("Đã xóa sản phẩm thành công!"); loadData();
+                }}
+            }});
         }}
+
+        async function xoaMaGiamGia(code) {{
+            await fetch('/api/admin/delete_discount', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{ma_code: code}}) }});
+            thongBao("Đã xoá mã giảm giá!"); loadData();
+        }}
+
         document.getElementById('formGame').onsubmit = async (e) => {{
             e.preventDefault();
             await fetch('/api/admin/add_game', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(Object.fromEntries(new FormData(e.target))) }});
-            alert("✅ Đã lưu sản phẩm!"); e.target.reset(); loadData();
+            thongBao("Đã lưu sản phẩm thành công!"); e.target.reset(); loadData();
         }};
+        
         document.getElementById('formAddKey').onsubmit = async (e) => {{
             e.preventDefault();
             const res = await fetch('/api/admin/import_keys', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(Object.fromEntries(new FormData(e.target))) }});
-            const data = await res.json(); alert(`✅ Nhập thành công: ${{data.count}} Key!`); e.target.reset(); loadData();
+            const data = await res.json(); 
+            thongBao(`Đã nhập thành công: ${{data.count}} Key vào kho!`); e.target.reset(); loadData();
         }};
+
+        document.getElementById('formDiscount').onsubmit = async (e) => {{
+            e.preventDefault();
+            await fetch('/api/admin/add_discount', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(Object.fromEntries(new FormData(e.target))) }});
+            thongBao("Đã tạo mã giảm giá thành công!"); e.target.reset(); loadData();
+        }}
         loadData();
     </script>
 </body>
 </html>
 """
 
-# --- GIAO DIỆN MINI APP SIÊU ĐẸP ---
+# --- GIAO DIỆN MINI APP SIÊU ĐẸP ĐÃ NÂNG CẤP CUỘN VÀ CHỨC NĂNG ---
 TRANG_MINI_APP = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -363,6 +453,8 @@ TRANG_MINI_APP = """
             --nav-bg: rgba(18, 0, 43, 0.95);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+        
+        /* Cải tiến cơ chế cuộn: Fixed body, Scrollable content */
         body { background-color: var(--bg-dark); color: var(--text-main); height: 100vh; overflow: hidden; position: relative; }
         
         /* Hiệu ứng cánh hoa rơi */
@@ -375,7 +467,7 @@ TRANG_MINI_APP = """
             100% { transform: translateY(100vh) rotate(360deg) scale(1.2); opacity: 0; }
         }
 
-        /* --- SPLASH SCREEN SIÊU ĐẸP --- */
+        /* --- SPLASH SCREEN MỚI: Đang mở shop Hely Shop... --- */
         #splashScreen {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #12002b; z-index: 9999; display: flex;
@@ -383,14 +475,18 @@ TRANG_MINI_APP = """
             transition: opacity 0.5s ease-out; flex-direction: column;
             background-image: radial-gradient(circle at center, #2a005c 0%, #12002b 100%);
         }
-        .splash-logo { font-size: 60px; animation: bounce 2s infinite; margin-bottom: 20px; }
+        .splash-spinner {
+            width: 50px; height: 50px; border: 4px solid rgba(200, 80, 192, 0.3); 
+            border-top-color: #c850c0; border-radius: 50%; 
+            animation: spin 1s linear infinite; margin-bottom: 25px;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
         .splash-text {
-            color: #fff; font-size: 22px; font-weight: 900; text-transform: uppercase;
+            color: #fff; font-size: 20px; font-weight: bold;
             background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             animation: pulse 2s infinite; padding: 0 20px; text-align: center;
         }
-        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
-        @keyframes pulse { 0% { opacity: 0.8; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1.05); } 100% { opacity: 0.8; transform: scale(0.95); } }
+        @keyframes pulse { 0% { opacity: 0.8; transform: scale(0.98); } 50% { opacity: 1; transform: scale(1.02); } 100% { opacity: 0.8; transform: scale(0.98); } }
 
         /* Top Header */
         .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: transparent; z-index: 10; position: relative; border-bottom: 1px solid var(--card-border); }
@@ -403,8 +499,12 @@ TRANG_MINI_APP = """
         .lang-btn { background: var(--card-bg); border: 1px solid var(--card-border); color: white; padding: 5px 10px; border-radius: 15px; font-size: 12px; }
         .user-avatar { width: 35px; height: 35px; background: var(--primary-gradient); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; }
 
-        /* Main Scroll Area */
-        .main-content { height: calc(100vh - 140px); overflow-y: auto; padding: 15px; position: relative; z-index: 1; padding-bottom: 80px;}
+        /* Main Scroll Area: Cải tiến vuốt trơn tru */
+        .main-content { 
+            height: calc(100vh - 70px - 75px); /* Trừ header và bottom nav */
+            overflow-y: auto; padding: 15px; position: relative; z-index: 1; 
+            padding-bottom: 80px; -webkit-overflow-scrolling: touch;
+        }
         .tab-section { display: none; animation: fadeIn 0.3s; }
         .tab-section.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -422,34 +522,45 @@ TRANG_MINI_APP = """
         .system-status:last-child { border-bottom: none; }
         .status-badge { background: transparent; color: #00ff88; padding: 5px 12px; border-radius: 15px; font-size: 13px; border: 1px solid #00ff88; }
 
-        /* Tab Shop (Mua key) */
-        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .product-card { display: flex; align-items: center; gap: 10px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; cursor: pointer; transition: 0.2s; }
-        .product-card:active { transform: scale(0.95); background: rgba(255,255,255,0.1); }
-        .product-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--card-bg); display: flex; justify-content: center; align-items: center; font-size: 20px;}
-        .product-info h4 { font-size: 14px; margin-bottom: 3px; }
-        .product-info p { font-size: 11px; color: var(--text-sub); }
+        /* Tab Shop (Mua key) - Đã nâng cấp UI thẻ theo yêu cầu */
+        .shop-grid { display: flex; flex-direction: column; gap: 15px; }
+        .product-card { display: flex; flex-direction: column; padding: 15px; background: rgba(255,255,255,0.03); border: 1px solid rgba(200, 80, 192, 0.4); border-radius: 16px; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        .product-card-top { display: flex; align-items: center; gap: 15px; }
+        .product-icon { width: 50px; height: 50px; border-radius: 12px; background: rgba(200, 80, 192, 0.2); border: 1px solid rgba(200,80,192,0.5); display: flex; justify-content: center; align-items: center; font-size: 24px;}
+        .product-info h4 { font-size: 16px; margin-bottom: 5px; color: white;}
+        .product-info p { font-size: 13px; color: #00ffcc; font-weight: bold; }
+        
+        .product-actions { display: flex; gap: 10px; margin-top: 15px; }
+        .btn-card { flex: 1; padding: 10px 0; border-radius: 10px; font-weight: bold; font-size: 14px; text-align: center; cursor: pointer; border: none; }
+        .btn-detail { background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.2); }
+        .btn-buy-quick { background: var(--primary-gradient); color: white; box-shadow: 0 2px 10px rgba(200, 80, 192, 0.4); }
+        .btn-card:active { transform: scale(0.96); }
 
-        /* Màn hình chi tiết sản phẩm */
+        /* Màn hình chi tiết sản phẩm & Mã giảm giá */
         #product-details { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 20; flex-direction: column; }
         .pd-header { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid var(--card-border); background: var(--nav-bg); }
         .pd-back { background: none; border: none; color: white; font-size: 24px; margin-right: 15px; cursor: pointer; }
-        .duration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px; }
-        .duration-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 15px; padding: 25px 10px; text-align: center; cursor: pointer; transition: 0.2s; }
-        .duration-card.selected { background: rgba(200, 80, 192, 0.1); border-color: var(--primary); box-shadow: 0 0 15px rgba(200, 80, 192, 0.4); }
-        .duration-card h3 { font-size: 18px; margin-bottom: 5px; color: #fff; }
+        .duration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px 15px 0 15px; }
+        .duration-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 15px; padding: 20px 10px; text-align: center; cursor: pointer; transition: 0.2s; }
+        .duration-card.selected { background: rgba(200, 80, 192, 0.15); border-color: var(--primary); box-shadow: 0 0 15px rgba(200, 80, 192, 0.5); }
+        .duration-card h3 { font-size: 16px; margin-bottom: 5px; color: #fff; }
         .duration-card p { font-size: 16px; color: #ff80ff; font-weight: bold; margin-bottom: 5px;}
-        .buy-action-bar { position: absolute; bottom: 0; left: 0; width: 100%; padding: 20px; background: var(--nav-bg); border-top: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; }
-        .buy-price { font-size: 22px; font-weight: bold; color: white; }
-        .btn-buy-now { background: var(--primary-gradient); border: none; padding: 12px 30px; border-radius: 25px; color: white; font-weight: bold; font-size: 16px; cursor: pointer; }
+        
+        .buy-action-bar { position: absolute; bottom: 0; left: 0; width: 100%; padding: 15px; background: var(--nav-bg); border-top: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; padding-bottom: env(safe-area-inset-bottom); }
+        .btn-buy-now { background: var(--primary-gradient); border: none; padding: 15px; border-radius: 20px; color: white; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 15px rgba(200, 80, 192, 0.4); width: 100%;}
+        
+        .discount-box { background: rgba(0,0,0,0.3); border: 1px dashed var(--primary); padding: 15px; border-radius: 12px; margin: 15px;}
+        .discount-input-row { display: flex; gap: 10px; margin-top: 8px;}
+        .discount-input-row input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; outline: none; font-size: 14px;}
+        .discount-input-row button { padding: 0 15px; border-radius: 8px; border: none; background: #00cdfe; color: white; font-weight: bold; font-size: 14px; cursor: pointer;}
 
         /* Tab Nạp tiền */
         .deposit-tabs { display: flex; background: rgba(0,0,0,0.5); border-radius: 12px; padding: 5px; margin-bottom: 20px; }
         .dt-btn { flex: 1; padding: 10px; text-align: center; color: var(--text-sub); border-radius: 8px; font-size: 14px; font-weight: bold; cursor:pointer;}
         .dt-btn.active { background: var(--card-bg); color: white; }
-        .balance-display { padding: 15px; margin-bottom: 20px; }
+        .balance-display { padding: 15px; margin-bottom: 20px; text-align: center; }
         .balance-display p { font-size: 14px; color: var(--text-sub); }
-        .balance-display h2 { font-size: 32px; font-weight: bold; margin-top: 5px; }
+        .balance-display h2 { font-size: 36px; font-weight: bold; margin-top: 5px; color: #fff;}
 
         /* Tab Profile */
         .profile-header { text-align: center; padding: 20px 0; }
@@ -486,7 +597,6 @@ TRANG_MINI_APP = """
         .music-player { position: absolute; bottom: 85px; right: 15px; background: rgba(30, 20, 50, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 10px 15px; display: flex; align-items: center; gap: 10px; z-index: 50; box-shadow: 0 5px 20px rgba(0,0,0,0.5); width: calc(100% - 100px); max-width: 280px; }
         .disk { width: 40px; height: 40px; border-radius: 50%; background: #000; display: flex; justify-content: center; align-items: center; animation: spin 4s linear infinite; }
         .disk::after { content: ''; width: 10px; height: 10px; background: #333; border-radius: 50%; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
         .music-info h4 { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
         .music-info p { font-size: 10px; color: var(--text-sub); }
 
@@ -500,8 +610,8 @@ TRANG_MINI_APP = """
 </head>
 <body>
     <div id="splashScreen">
-        <div class="splash-logo">✨</div>
-        <div class="splash-text">Chào mừng bạn đến với Hely shop siêu đẹp</div>
+        <div class="splash-spinner"></div>
+        <div class="splash-text">Đang mở shop Hely Shop...</div>
     </div>
 
     <div class="petals" id="petals-container"></div>
@@ -513,8 +623,7 @@ TRANG_MINI_APP = """
             <div class="modal-icon" id="mdIcon">❓</div>
             <div class="modal-title" id="mdTitle">Tiêu đề</div>
             <div class="modal-desc" id="mdDesc">Nội dung</div>
-            <div class="modal-buttons" id="mdButtons">
-                </div>
+            <div class="modal-buttons" id="mdButtons"></div>
         </div>
     </div>
 
@@ -532,8 +641,7 @@ TRANG_MINI_APP = """
         </div>
     </div>
 
-    <div class="main-content">
-        
+    <div class="main-content" id="scrollableArea">
         <div id="tab-home" class="tab-section active">
             <div class="glass-card">
                 <p style="font-size: 12px; color: var(--text-sub); margin-bottom: 15px;">Luồng mua key gọn nhất</p>
@@ -547,14 +655,12 @@ TRANG_MINI_APP = """
 
             <div class="glass-card">
                 <div class="section-title"><div class="icon-circle">📊</div> Trạng thái hệ thống</div>
-                <div id="systemStatusList">
-                    </div>
+                <div id="systemStatusList"></div>
             </div>
         </div>
 
         <div id="tab-shop" class="tab-section">
-            <div class="shop-grid" id="catalogContainer">
-                </div>
+            <div class="shop-grid" id="catalogContainer"></div>
         </div>
 
         <div id="tab-deposit" class="tab-section">
@@ -584,8 +690,7 @@ TRANG_MINI_APP = """
                 <div class="deposit-tabs" style="margin-top: 15px;">
                     <div class="dt-btn active" style="border-radius:20px;">Tất cả</div>
                 </div>
-                <div id="myKeysContainer" style="margin-top: 15px;">
-                    </div>
+                <div id="myKeysContainer" style="margin-top: 15px;"></div>
             </div>
         </div>
 
@@ -602,22 +707,34 @@ TRANG_MINI_APP = """
                 <div class="glass-card menu-item" onclick="showCustomAlert('🎧', 'Hỗ trợ', 'Vui lòng liên hệ Admin @luongtuyen20')"><div class="icon">🎧</div><span>Hỗ trợ</span></div>
             </div>
         </div>
+    </div>
 
-    </div> <div id="product-details" class="sub-view">
+    <div id="product-details" class="sub-view">
         <div class="pd-header">
             <button class="pd-back" onclick="closeSubView('product-details')">←</button>
             <h3 id="pd-title">Tên Sản Phẩm</h3>
         </div>
-        <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 100px;">
-            <div class="glass-card" style="display:flex; align-items:center; gap: 15px; background: rgba(0,0,0,0.4);">
-                <div class="product-icon" style="width:60px; height:60px; font-size:30px;" id="pd-icon">⚡</div>
-                <div>
-                    <h3 id="pd-name" style="margin-bottom:5px; font-size:18px;">Sản Phẩm</h3>
-                    <p style="font-size:12px; color:var(--text-sub);" id="pd-desc">Mô tả</p>
+        <div style="flex:1; overflow-y:auto; padding-bottom: 120px; -webkit-overflow-scrolling: touch;">
+            <div style="padding: 15px;">
+                <div class="glass-card" style="display:flex; align-items:center; gap: 15px; background: rgba(0,0,0,0.4); margin-bottom: 5px;">
+                    <div class="product-icon" style="width:60px; height:60px; font-size:30px; border:none;" id="pd-icon">⚡</div>
+                    <div>
+                        <h3 id="pd-name" style="margin-bottom:5px; font-size:18px;">Sản Phẩm</h3>
+                        <p style="font-size:12px; color:var(--text-sub);" id="pd-desc">Mô tả</p>
+                    </div>
                 </div>
             </div>
             
-            <h4 style="margin: 20px 0 10px; font-size: 15px; color:#e0aaff;">Chọn thời hạn:</h4>
+            <div class="discount-box">
+                <p style="font-size: 14px; font-weight: bold; color:#e0aaff;">Mã giảm giá (nếu có)</p>
+                <div class="discount-input-row">
+                    <input type="text" id="inpDiscount" placeholder="Nhập mã ưu đãi...">
+                    <button onclick="checkDiscount()">Áp dụng</button>
+                </div>
+                <p id="msgDiscount" style="font-size:13px; margin-top: 8px; font-weight:bold; display:none;"></p>
+            </div>
+            
+            <h4 style="margin: 5px 15px; font-size: 15px; color:#e0aaff;">Chọn thời hạn mua:</h4>
             <div class="duration-grid">
                 <div class="duration-card" onclick="selectDuration('gio')" id="card-gio">
                     <h3>1 Giờ</h3><p id="price-gio">--đ</p><small id="stock-gio" style="font-size:11px;color:#00ff88;">Sẵn sàng</small>
@@ -632,7 +749,7 @@ TRANG_MINI_APP = """
         </div>
         
         <div class="buy-action-bar">
-            <button class="btn-buy-now" style="width:100%; font-size:18px; padding:15px;" onclick="confirmPurchase()">Mua Key</button>
+            <button class="btn-buy-now" onclick="confirmPurchase()">Thanh toán ngay</button>
         </div>
     </div>
 
@@ -641,8 +758,7 @@ TRANG_MINI_APP = """
             <button class="pd-back" onclick="closeSubView('sv-orders')">←</button>
             <h3>Danh sách đơn hàng</h3>
         </div>
-        <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 20px;" id="ordersContainer">
-            </div>
+        <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 20px;" id="ordersContainer"></div>
     </div>
 
     <div id="sv-history" class="sub-view">
@@ -650,8 +766,7 @@ TRANG_MINI_APP = """
             <button class="pd-back" onclick="closeSubView('sv-history')">←</button>
             <h3>Lịch sử nạp tiền</h3>
         </div>
-        <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 20px;" id="historyContainer">
-            </div>
+        <div style="padding: 15px; flex:1; overflow-y:auto; padding-bottom: 20px;" id="historyContainer"></div>
     </div>
 
     <div class="music-player">
@@ -681,14 +796,14 @@ TRANG_MINI_APP = """
     </div>
 
     <script>
-        // --- ẨN SPLASH SCREEN SAU 5 GIÂY ---
+        // --- ẨN SPLASH SCREEN SAU 3.5 GIÂY ---
         setTimeout(() => {
             const splash = document.getElementById('splashScreen');
             if(splash) {
                 splash.style.opacity = '0';
                 setTimeout(() => splash.style.display = 'none', 500);
             }
-        }, 5000);
+        }, 3500);
 
         // --- Animation Cánh Hoa ---
         function createPetals() {
@@ -712,6 +827,8 @@ TRANG_MINI_APP = """
         let currentProduct = null;
         let currentDuration = 'ngay';
         let currentPrice = 0;
+        let currentDiscountCode = "";
+        let currentDiscountPercent = 0;
         let lastBalance = 0;
 
         if (window.Telegram?.WebApp) {
@@ -738,7 +855,6 @@ TRANG_MINI_APP = """
             
             let btnHtml = '';
             if (onConfirm) {
-                // Sửa chữ thành Đồng ý / Không đồng ý theo style mua key
                 btnHtml = `
                     <button class="btn-modal btn-cancel" onclick="closeModal()">Huỷ</button>
                     <button class="btn-modal btn-confirm" onclick="executeCallback()">Đồng ý</button>
@@ -768,6 +884,8 @@ TRANG_MINI_APP = """
             document.getElementById('tab-' + tabId).classList.add('active');
             el.classList.add('active');
             if(tabId === 'shop') renderCatalog();
+            // Scroll trang lên đầu
+            document.getElementById('scrollableArea').scrollTo(0, 0);
         }
 
         function switchDepoTab(type, el) {
@@ -812,7 +930,6 @@ TRANG_MINI_APP = """
             lastBalance = globalClient.balance;
             updateUI();
             
-            // Auto Polling để check nạp tiền (mỗi 10s)
             setInterval(async () => {
                 const newData = await fetchClientData();
                 if(newData.balance > lastBalance) {
@@ -826,18 +943,15 @@ TRANG_MINI_APP = """
         }
 
         function updateUI() {
-            // Cập nhật số dư
             let bal = globalClient.balance.toLocaleString() + 'đ';
             document.getElementById('depoBalance').innerText = bal;
 
-            // Render Trạng thái hệ thống (Home)
             let stHtml = '';
             globalClient.catalog.forEach(g => {
                 stHtml += `<div class="system-status"><span style="font-weight:bold;">${g.ten_game}</span><span class="status-badge">Ổn định</span></div>`;
             });
             document.getElementById('systemStatusList').innerHTML = stHtml || '<p style="text-align:center;font-size:12px;opacity:0.5;">Chưa có dữ liệu</p>';
 
-            // Render Lịch sử nạp
             let hisHtml = '';
             if(globalClient.history.length === 0) hisHtml = '<div style="text-align:center; padding:30px; opacity:0.5;">Chưa có giao dịch nạp</div>';
             globalClient.history.forEach(h => {
@@ -848,7 +962,6 @@ TRANG_MINI_APP = """
             });
             document.getElementById('historyContainer').innerHTML = hisHtml;
 
-            // Render Key & Đơn hàng
             let keyHtml = '';
             if(globalClient.my_keys.length === 0) {
                 keyHtml = '<div style="text-align: center; padding: 40px 20px; opacity: 0.6;"><div style="font-size: 40px; margin-bottom: 10px;">🔑</div><h4>Chưa có key</h4><p style="font-size: 12px;">Key bạn mua sẽ xuất hiện ở đây.</p></div>';
@@ -863,10 +976,10 @@ TRANG_MINI_APP = """
                 });
             }
             document.getElementById('myKeysContainer').innerHTML = keyHtml;
-            document.getElementById('ordersContainer').innerHTML = keyHtml; // Dùng chung view cho Đơn hàng
+            document.getElementById('ordersContainer').innerHTML = keyHtml; 
         }
 
-        // --- Logic Shop ---
+        // --- Logic Shop & Discount ---
         function renderCatalog() {
             if(!globalClient) return;
             const container = document.getElementById('catalogContainer');
@@ -875,11 +988,17 @@ TRANG_MINI_APP = """
             globalClient.catalog.forEach((g, idx) => {
                 let icon = icons[idx % icons.length];
                 html += `
-                <div class="product-card" onclick="openProductDetail('${g.id}', '${icon}')">
-                    <div class="product-icon">${icon}</div>
-                    <div class="product-info">
-                        <h4>${g.ten_game}</h4>
-                        <p style="color:#00ffcc; font-weight:bold;">${g.gia_ngay.toLocaleString()}đ / Ngày</p>
+                <div class="product-card">
+                    <div class="product-card-top">
+                        <div class="product-icon">${icon}</div>
+                        <div class="product-info">
+                            <h4>${g.ten_game}</h4>
+                            <p>${g.gia_ngay.toLocaleString()}đ / Ngày</p>
+                        </div>
+                    </div>
+                    <div class="product-actions">
+                        <button class="btn-card btn-detail" onclick="openProductDetail('${g.id}', '${icon}')">🔍 Chi tiết</button>
+                        <button class="btn-card btn-buy-quick" onclick="openProductDetail('${g.id}', '${icon}')">🛒 Mua ngay</button>
                     </div>
                 </div>`;
             });
@@ -889,15 +1008,19 @@ TRANG_MINI_APP = """
         function openProductDetail(id, icon) {
             currentProduct = globalClient.catalog.find(g => g.id === id);
             if(!currentProduct) return;
+            
+            // Reset discount
+            currentDiscountCode = "";
+            currentDiscountPercent = 0;
+            document.getElementById('inpDiscount').value = '';
+            document.getElementById('msgDiscount').style.display = 'none';
 
             document.getElementById('pd-title').innerText = currentProduct.ten_game;
             document.getElementById('pd-name').innerText = currentProduct.ten_game;
             document.getElementById('pd-desc').innerText = currentProduct.mo_ta || 'Sản phẩm chất lượng cao';
             document.getElementById('pd-icon').innerText = icon;
 
-            document.getElementById('price-gio').innerText = currentProduct.gia_gio.toLocaleString() + 'đ';
-            document.getElementById('price-ngay').innerText = currentProduct.gia_ngay.toLocaleString() + 'đ';
-            document.getElementById('price-thang').innerText = currentProduct.gia_thang.toLocaleString() + 'đ';
+            updatePricesDisplay();
             
             const renderStock = (count) => count > 0 ? `Sẵn (${count})` : '<span style="color:#ff4444;">Hết hàng</span>';
             document.getElementById('stock-gio').innerHTML = renderStock(currentProduct.stock_gio);
@@ -908,18 +1031,53 @@ TRANG_MINI_APP = """
             openSubView('product-details');
         }
 
+        async function checkDiscount() {
+            const code = document.getElementById('inpDiscount').value.trim();
+            const msgEl = document.getElementById('msgDiscount');
+            if(!code) return;
+            
+            const res = await fetch(`/api/check_discount?code=${code}`);
+            const data = await res.json();
+            msgEl.style.display = 'block';
+            if(data.success) {
+                currentDiscountPercent = data.percent;
+                currentDiscountCode = code;
+                msgEl.innerText = `✅ Đã áp dụng giảm ${data.percent}%`;
+                msgEl.style.color = '#00ff88';
+                updatePricesDisplay();
+                selectDuration(currentDuration); // Refresh price selected
+            } else {
+                currentDiscountPercent = 0;
+                currentDiscountCode = "";
+                msgEl.innerText = `❌ Mã không hợp lệ hoặc đã hết lượt`;
+                msgEl.style.color = '#ff4444';
+                updatePricesDisplay();
+                selectDuration(currentDuration);
+            }
+        }
+
+        function updatePricesDisplay() {
+            let p_gio = currentProduct.gia_gio * (1 - currentDiscountPercent/100);
+            let p_ngay = currentProduct.gia_ngay * (1 - currentDiscountPercent/100);
+            let p_thang = currentProduct.gia_thang * (1 - currentDiscountPercent/100);
+            
+            const fmt = (oldP, newP) => currentDiscountPercent > 0 ? `<s style="color:#888; font-size:12px;">${oldP.toLocaleString()}đ</s><br>${newP.toLocaleString()}đ` : `${newP.toLocaleString()}đ`;
+            
+            document.getElementById('price-gio').innerHTML = fmt(currentProduct.gia_gio, p_gio);
+            document.getElementById('price-ngay').innerHTML = fmt(currentProduct.gia_ngay, p_ngay);
+            document.getElementById('price-thang').innerHTML = fmt(currentProduct.gia_thang, p_thang);
+        }
+
         function selectDuration(dur) {
             currentDuration = dur;
             document.querySelectorAll('.duration-card').forEach(c => c.classList.remove('selected'));
             document.getElementById('card-' + dur).classList.add('selected');
             
-            if(dur === 'gio') currentPrice = currentProduct.gia_gio;
-            if(dur === 'ngay') currentPrice = currentProduct.gia_ngay;
-            if(dur === 'thang') currentPrice = currentProduct.gia_thang;
+            let baseP = dur === 'gio' ? currentProduct.gia_gio : (dur === 'ngay' ? currentProduct.gia_ngay : currentProduct.gia_thang);
+            currentPrice = baseP * (1 - currentDiscountPercent/100);
         }
 
         function confirmPurchase() {
-            // Check stock local trc
             if(currentProduct[`stock_${currentDuration}`] <= 0) {
                 showCustomAlert('❌', 'Thất bại', 'Gói thời hạn này hiện đang hết hàng. Vui lòng chọn gói khác!');
                 return;
@@ -930,8 +1088,7 @@ TRANG_MINI_APP = """
             }
 
             let loaiStr = currentDuration === 'gio' ? '1 Giờ' : (currentDuration === 'ngay' ? '1 Ngày' : '1 Tháng');
-            // Cập nhật text y như yêu cầu
-            showCustomAlert('🛒', 'Xác nhận thanh toán', `Bạn chắc chắn mua key <b>${currentProduct.ten_game} - ${loaiStr}</b> chứ?`, executePurchase);
+            showCustomAlert('🛒', 'Xác nhận thanh toán', `Bạn chắc chắn mua key <b>${currentProduct.ten_game} - ${loaiStr}</b> với giá <b style="color:#00ff88">${currentPrice.toLocaleString()}đ</b> chứ?`, executePurchase);
         }
 
         async function executePurchase() {
@@ -939,14 +1096,12 @@ TRANG_MINI_APP = """
             const res = await fetch('/api/purchase_key', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({user_id: uid, game_id: currentProduct.id, loai_key: currentDuration})
+                body: JSON.stringify({user_id: uid, game_id: currentProduct.id, loai_key: currentDuration, discount_code: currentDiscountCode})
             });
             const data = await res.json();
             if(data.success) {
                 closeSubView('product-details');
-                // Chữ Mua key thành công siêu đẹp theo yêu cầu
-                showCustomAlert('🎉', 'Mua key thành công siêu đẹp!', `Cảm ơn bạn đã ủng hộ Hely Shop!<br><br><span style="background:rgba(255,255,255,0.1); padding:10px; border-radius:8px; display:inline-block; font-family:monospace; color:#00ffcc; font-size:16px;">${data.key}</span><br><br><small>Key đã được lưu vào Tab [Key của tôi]</small>`);
-                // Force reload data
+                showCustomAlert('🎉', 'Mua key thành công!', `Cảm ơn bạn đã ủng hộ Hely Shop!<br><br><span style="background:rgba(255,255,255,0.1); padding:10px; border-radius:8px; display:inline-block; font-family:monospace; color:#00ffcc; font-size:16px;">${data.key}</span><br><br><small>Key đã được lưu vào Tab [Key của tôi]</small>`);
                 globalClient = await fetchClientData();
                 lastBalance = globalClient.balance;
                 updateUI();
@@ -999,8 +1154,21 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
             elif self.path == "/health":
                 self.send_response(200); self.send_header("Content-type", "text/plain; charset=utf-8"); self.end_headers()
                 self.wfile.write("OK".encode("utf-8"))
+            elif self.path.startswith("/api/check_discount"):
+                query = parse_qs(urlparse(self.path).query)
+                code = query.get('code', [''])[0]
+                kn = sqlite3.connect("he_thong_ban_key.db")
+                con_tro = kn.cursor()
+                con_tro.execute("SELECT phan_tram, so_luong FROM ma_giam_gia WHERE ma_code=?", (code,))
+                row = con_tro.fetchone()
+                kn.close()
+                self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
+                if row and row[1] > 0:
+                    self.wfile.write(json.dumps({"success": True, "percent": row[0]}).encode('utf-8'))
+                else:
+                    self.wfile.write(json.dumps({"success": False}).encode('utf-8'))
+
             elif self.path.startswith("/api/sync_client"):
-                from urllib.parse import urlparse, parse_qs
                 query = parse_qs(urlparse(self.path).query)
                 uid = query.get('uid', ['guest_123'])[0]
                 name = query.get('name', ['Khách'])[0]
@@ -1019,7 +1187,6 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                     con_tro.execute("UPDATE khach_hang SET ten_nguoi_dung=?, username=?, ngay_tuong_tac=CURRENT_TIMESTAMP WHERE nguoi_dung_id=?", (name, username, uid))
                     kn.commit()
 
-                # Lấy danh sách Catalog & Tồn kho
                 con_tro.execute("SELECT id, ten_game, mo_ta, gia_gio, gia_ngay, gia_thang FROM san_pham_game")
                 games = con_tro.fetchall()
                 catalog = []
@@ -1032,11 +1199,9 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                         "stock_gio": stocks.get('gio', 0), "stock_ngay": stocks.get('ngay', 0), "stock_thang": stocks.get('thang', 0)
                     })
 
-                # Lấy danh sách Key đã mua
                 con_tro.execute("SELECT k.ma_key, g.ten_game, k.loai_key, k.ngay_ban FROM kho_key_dong k JOIN san_pham_game g ON k.game_id = g.id WHERE k.nguoi_mua=? ORDER BY k.ngay_ban DESC", (uid,))
                 my_keys = [{"key": r[0], "game": r[1], "loai": r[2], "thoi_gian": r[3]} for r in con_tro.fetchall()]
 
-                # Lấy lịch sử nạp tiền từ Admin
                 con_tro.execute("SELECT so_tien, ngay_nap FROM lich_su_nap WHERE nguoi_dung_id=? ORDER BY ngay_nap DESC", (uid,))
                 history = [{"tien": r[0], "thoi_gian": r[1]} for r in con_tro.fetchall()]
                 
@@ -1091,9 +1256,13 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 for r in con_tro.fetchall():
                     if r[0] not in counts: counts[r[0]] = {}
                     counts[r[0]][r[1]] = r[2]
+                
+                con_tro.execute("SELECT ma_code, phan_tram, so_luong FROM ma_giam_gia")
+                discounts = [{"ma_code": r[0], "phan_tram": r[1], "so_luong": r[2]} for r in con_tro.fetchall()]
+
                 kn.close()
                 self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
-                self.wfile.write(json.dumps({"games": games, "counts": counts}).encode('utf-8'))
+                self.wfile.write(json.dumps({"games": games, "counts": counts, "discounts": discounts}).encode('utf-8'))
             else:
                 self.send_response(404); self.end_headers()
         except Exception as e:
@@ -1123,7 +1292,10 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
 
             elif self.path == "/api/purchase_key":
                 req = json.loads(post_data.decode('utf-8'))
-                uid, game_id, loai_key = req.get('user_id'), req.get('game_id'), req.get('loai_key')
+                uid = req.get('user_id')
+                game_id = req.get('game_id')
+                loai_key = req.get('loai_key')
+                discount_code = req.get('discount_code', '')
 
                 kn = sqlite3.connect("he_thong_ban_key.db")
                 con_tro = kn.cursor()
@@ -1138,8 +1310,18 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 con_tro.execute("SELECT gia_gio, gia_ngay, gia_thang FROM san_pham_game WHERE id=?", (game_id,))
                 g_row = con_tro.fetchone()
                 
-                gia = g_row[0] if loai_key == 'gio' else (g_row[1] if loai_key == 'ngay' else g_row[2])
-                if (user_row[0] if user_row else 0) < gia:
+                gia_goc = g_row[0] if loai_key == 'gio' else (g_row[1] if loai_key == 'ngay' else g_row[2])
+                giam_gia = 0
+
+                if discount_code:
+                    con_tro.execute("SELECT phan_tram, so_luong FROM ma_giam_gia WHERE ma_code=?", (discount_code,))
+                    mg = con_tro.fetchone()
+                    if mg and mg[1] > 0:
+                        giam_gia = mg[0]
+                
+                gia_cuoi = int(gia_goc * (1 - giam_gia / 100.0))
+
+                if (user_row[0] if user_row else 0) < gia_cuoi:
                     self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
                     self.wfile.write(json.dumps({"success": False, "message": "Số dư không đủ!"}).encode('utf-8'))
                     kn.close(); return
@@ -1148,8 +1330,10 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 k_row = con_tro.fetchone()
                 
                 if k_row:
-                    con_tro.execute("UPDATE khach_hang SET so_du = so_du - ? WHERE nguoi_dung_id=?", (gia, uid))
+                    con_tro.execute("UPDATE khach_hang SET so_du = so_du - ? WHERE nguoi_dung_id=?", (gia_cuoi, uid))
                     con_tro.execute("UPDATE kho_key_dong SET trang_thai='da_ban', nguoi_mua=?, ngay_ban=? WHERE id=?", (uid, datetime.now().isoformat(), k_row[0]))
+                    if giam_gia > 0:
+                        con_tro.execute("UPDATE ma_giam_gia SET so_luong = so_luong - 1 WHERE ma_code=?", (discount_code,))
                     kn.commit()
                     res = {"success": True, "key": k_row[1]}
                 else:
@@ -1159,7 +1343,6 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
                 self.wfile.write(json.dumps(res).encode('utf-8'))
             
-            # Tính năng gửi thông báo All User qua Bot
             elif self.path == "/api/admin/broadcast":
                 if not self.xac_thuc_admin():
                     self.send_response(401); self.end_headers(); return
@@ -1175,7 +1358,6 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 thanh_cong = 0
                 for u in users:
                     chat_id = u[0]
-                    # Gọi API Telegram gửi thẳng vào khung chat (không liên quan miniapp)
                     url = f"https://api.telegram.org/bot{MÃ_TOKEN}/sendMessage"
                     data = urllib.parse.urlencode({'chat_id': chat_id, 'text': msg}).encode('utf-8')
                     try:
@@ -1187,7 +1369,6 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
                 self.wfile.write(json.dumps({"success": True, "count": thanh_cong}).encode('utf-8'))
 
-            # Tính năng xoá Sản Phẩm
             elif self.path == "/api/admin/delete_game":
                 if not self.xac_thuc_admin():
                     self.send_response(401); self.end_headers(); return
@@ -1195,15 +1376,25 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                 gid = req.get('game_id')
                 kn = sqlite3.connect("he_thong_ban_key.db")
                 con_tro = kn.cursor()
-                # Xoá sản phẩm
                 con_tro.execute("DELETE FROM san_pham_game WHERE id=?", (gid,))
-                # Xoá luôn các key liên quan đến sản phẩm đó
                 con_tro.execute("DELETE FROM kho_key_dong WHERE game_id=?", (gid,))
                 kn.commit(); kn.close()
                 self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
                 self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            
+            elif self.path == "/api/admin/delete_discount":
+                if not self.xac_thuc_admin():
+                    self.send_response(401); self.end_headers(); return
+                req = json.loads(post_data.decode('utf-8'))
+                code = req.get('ma_code')
+                kn = sqlite3.connect("he_thong_ban_key.db")
+                con_tro = kn.cursor()
+                con_tro.execute("DELETE FROM ma_giam_gia WHERE ma_code=?", (code,))
+                kn.commit(); kn.close()
+                self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
 
-            elif self.path in ["/api/admin/deposit", "/api/admin/ban", "/api/admin/add_game", "/api/admin/import_keys"]:
+            elif self.path in ["/api/admin/deposit", "/api/admin/ban", "/api/admin/add_game", "/api/admin/import_keys", "/api/admin/add_discount"]:
                 if not self.xac_thuc_admin():
                     self.send_response(401); self.end_headers(); return
                 
@@ -1215,7 +1406,6 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                     amt = float(req.get('amount', 0))
                     uid = req.get('user_id')
                     con_tro.execute("UPDATE khach_hang SET so_du = so_du + ? WHERE nguoi_dung_id=?", (amt, uid))
-                    # Thêm vào bảng lịch sử nạp
                     con_tro.execute("INSERT INTO lich_su_nap (nguoi_dung_id, so_tien) VALUES (?, ?)", (uid, amt))
                 elif self.path == "/api/admin/ban":
                     con_tro.execute("UPDATE khach_hang SET trang_thai=? WHERE nguoi_dung_id=?", (req.get('status'), req.get('user_id')))
@@ -1234,6 +1424,11 @@ class BộXửLýYêuCầu(BaseHTTPRequestHandler):
                     self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
                     self.wfile.write(json.dumps({"success": True, "count": inserted}).encode('utf-8'))
                     return
+                elif self.path == "/api/admin/add_discount":
+                    ma_code = req.get('ma_code')
+                    phan_tram = int(req.get('phan_tram', 0))
+                    so_luong = int(req.get('so_luong', 0))
+                    con_tro.execute("INSERT OR REPLACE INTO ma_giam_gia (ma_code, phan_tram, so_luong) VALUES (?, ?, ?)", (ma_code, phan_tram, so_luong))
 
                 kn.commit(); kn.close()
                 self.send_response(200); self.send_header("Content-type", "application/json"); self.end_headers()
